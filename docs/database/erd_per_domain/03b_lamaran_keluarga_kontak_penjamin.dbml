@@ -1,0 +1,55 @@
+// Sistem Rekrutmen Karyawan Security Berbasis AI - PT Indra Garda Agung
+// Kelompok 9 - Capstone TI Undiknas - Tugas 1B
+// ERD v2.1 per domain (DBML untuk dbdiagram.io). Sumber kebenaran: Kamus Data v2.1.
+// Notasi Ref: '>' banyak-ke-satu, '-' satu-ke-satu.
+
+// Domain 3b. Lamaran: keluarga, kontak darurat, penjamin
+// Tabel di dalam kotak grup = tabel domain ini. Tabel di luar kotak = tabel dari domain lain (hanya kolom yang dirujuk).
+
+Table application_family_members {
+  id             uuid [pk]
+  application_id uuid [not null]
+  relationship   varchar(30) [not null]
+  "name"         varchar(150) [not null]
+  age            integer
+  occupation     varchar(100)
+
+  Note: 'Data keluarga.'
+}
+
+Table application_emergency_contacts {
+  id             uuid [pk]
+  application_id uuid [not null]
+  "name"         varchar(150) [not null]
+  relationship   varchar(30) [not null]
+  phone          varchar(20) [not null]
+
+  Note: 'Kontak darurat.'
+}
+
+Table application_references {
+  id             uuid [pk]
+  application_id uuid [not null]
+  "name"         varchar(150) [not null]
+  relationship   varchar(30) [not null]
+  phone          varchar(20) [not null]
+  address        text
+
+  Note: 'Referensi / penjamin.'
+}
+
+Table applications {
+  id uuid [pk]
+
+  Note: 'Tabel dari Domain 3a. Lamaran: data pribadi, pendidikan, pekerjaan'
+}
+
+Ref: application_family_members.application_id > applications.id
+Ref: application_emergency_contacts.application_id > applications.id
+Ref: application_references.application_id > applications.id
+
+TableGroup lamaran_d3b {
+  application_family_members
+  application_emergency_contacts
+  application_references
+}

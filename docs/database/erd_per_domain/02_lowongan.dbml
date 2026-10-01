@@ -1,0 +1,92 @@
+// Sistem Rekrutmen Karyawan Security Berbasis AI - PT Indra Garda Agung
+// Kelompok 9 - Capstone TI Undiknas - Tugas 1B
+// ERD v2.1 per domain (DBML untuk dbdiagram.io). Sumber kebenaran: Kamus Data v2.1.
+// Notasi Ref: '>' banyak-ke-satu, '-' satu-ke-satu.
+
+// Domain 2. Lowongan
+// Tabel di dalam kotak grup = tabel domain ini. Tabel di luar kotak = tabel dari domain lain (hanya kolom yang dirujuk).
+
+Table positions {
+  id     integer [pk]
+  "name" varchar(50) [unique, not null]
+
+  Note: 'Master posisi (FR-7). Seeder: Anggota, Danru, Chief.'
+}
+
+Table job_postings {
+  id                   uuid [pk]
+  created_by           uuid [not null]
+  title                varchar(200) [not null]
+  placement_location   varchar(200) [not null]
+  timezone             varchar(40) [not null, default: 'Asia/Makassar', note: 'zona waktu IANA lokasi penempatan']
+  description          text
+  "status"             varchar(10) [not null, default: 'DRAFT', note: 'DRAFT / OPEN / CLOSED']
+  min_criteria_met     integer [not null, note: 'contoh 5 dari 10 (TBC)']
+  assessment_min_score numeric(6,2) [not null, note: 'ambang FR-15 (TBC)']
+  open_at              timestamptz
+  close_at             timestamptz [note: 'harus setelah open_at']
+  created_at           timestamptz [not null]
+  updated_at           timestamptz [not null]
+
+  Note: 'Lowongan yang dikelola Admin (FR-17).'
+}
+
+Table job_posting_positions {
+  job_posting_id uuid [not null]
+  position_id    integer [not null]
+  quota          integer [not null, note: 'CHECK > 0']
+
+  indexes {
+    (job_posting_id, position_id) [pk]
+  }
+
+  Note: 'Posisi yang dibuka pada lowongan beserta kuotanya.'
+}
+
+Table qualification_criteria {
+  id             uuid [pk]
+  job_posting_id uuid [not null]
+  code           varchar(30) [not null, note: 'AGE / HEIGHT / DOMICILE / CERT / DOCS / EXPERIENCE ...']
+  "name"         varchar(100) [not null]
+  source_field   varchar(100) [not null, note: 'nama kolom atau kode kriteria terhitung']
+  operator       varchar(10) [not null, note: 'GTE / LTE / EQ / IN / BETWEEN']
+  "value"        jsonb [not null, note: 'contoh {"min":18,"max":35}']
+  is_mandatory   boolean [not null, default: false]
+  weight         numeric(5,2) [not null, note: 'bobot skor kecocokan (TBC)']
+  order_no       integer [not null]
+
+  Note: 'Kriteria kualifikasi validasi administrasi (FR-9, FR-17).'
+}
+
+Table score_weights {
+  id             uuid [pk]
+  job_posting_id uuid [not null]
+  component      varchar(15) [not null, note: 'ADMIN / ASSESSMENT / INTERVIEW']
+  weight_percent numeric(5,2) [not null, note: 'CHECK 0-100']
+
+  indexes {
+    (job_posting_id, component) [unique]
+  }
+
+  Note: 'Bobot komponen skor akhir (FR-31). Total per lowongan = 100.'
+}
+
+Table users {
+  id uuid [pk]
+
+  Note: 'Tabel dari Domain 1. Akun dan autentikasi'
+}
+
+Ref: job_postings.created_by > users.id
+Ref: job_posting_positions.job_posting_id > job_postings.id
+Ref: job_posting_positions.position_id > positions.id
+Ref: qualification_criteria.job_posting_id > job_postings.id
+Ref: score_weights.job_posting_id > job_postings.id
+
+TableGroup lowongan_d2 {
+  positions
+  job_postings
+  job_posting_positions
+  qualification_criteria
+  score_weights
+}

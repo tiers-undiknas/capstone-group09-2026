@@ -1,0 +1,101 @@
+// Sistem Rekrutmen Karyawan Security Berbasis AI - PT Indra Garda Agung
+// Kelompok 9 - Capstone TI Undiknas - Tugas 1B
+// ERD v2.1 per domain (DBML untuk dbdiagram.io). Sumber kebenaran: Kamus Data v2.1.
+// Notasi Ref: '>' banyak-ke-satu, '-' satu-ke-satu.
+
+// Domain 3a. Lamaran: data pribadi, pendidikan, pekerjaan
+// Tabel di dalam kotak grup = tabel domain ini. Tabel di luar kotak = tabel dari domain lain (hanya kolom yang dirujuk).
+
+Table applications {
+  id              uuid [pk]
+  applicant_id    uuid [not null]
+  job_posting_id  uuid [not null]
+  position_id     integer [not null]
+  "status"        varchar(30) [not null, default: 'DRAFT', note: 'DRAFT / SUBMITTED / SCREENING_PASSED / SCREENING_FAILED / ASSESSMENT_IN_PROGRESS / ASSESSMENT_PASSED / ASSESSMENT_FAILED / INTERVIEW_PENDING / INTERVIEW_DONE / FINALIZED']
+  expected_salary numeric(14,2)
+  submitted_at    timestamptz [note: 'null selama DRAFT']
+  created_at      timestamptz [not null]
+  updated_at      timestamptz [not null]
+
+  indexes {
+    (applicant_id, job_posting_id) [unique]
+    (job_posting_id, status) [name: 'idx_applications_dashboard']
+  }
+
+  Note: 'Satu lamaran = satu pelamar pada satu lowongan dan posisi (FR-5, FR-7, FR-8, FR-18).'
+}
+
+Table applicant_profiles {
+  id                   uuid [pk]
+  application_id       uuid [unique, not null]
+  nik                  varchar(16) [not null, note: 'sensitif']
+  birth_place          varchar(100) [not null]
+  birth_date           date [not null]
+  gender               varchar(15) [not null]
+  religion             varchar(30)
+  marital_status       varchar(20)
+  phone                varchar(20) [not null]
+  address              text [not null]
+  domicile_city        varchar(100) [not null]
+  height_cm            numeric(5,1) [not null]
+  weight_kg            numeric(5,1)
+  blood_type           varchar(3)
+  martial_arts_skill   varchar(100)
+  security_certificate varchar(100)
+
+  Note: 'Data pribadi per lamaran (snapshot), relasi 1:1.'
+}
+
+Table application_educations {
+  id             uuid [pk]
+  application_id uuid [not null]
+  "level"        varchar(20) [not null]
+  institution    varchar(150) [not null]
+  major          varchar(100)
+  year_start     integer
+  year_end       integer
+
+  Note: 'Riwayat pendidikan.'
+}
+
+Table application_work_histories {
+  id             uuid [pk]
+  application_id uuid [not null]
+  company        varchar(150) [not null]
+  "position"     varchar(100) [not null]
+  start_date     date
+  end_date       date
+  reason_leaving varchar(255)
+
+  Note: 'Riwayat pekerjaan.'
+}
+
+Table users {
+  id uuid [pk]
+
+  Note: 'Tabel dari Domain 1. Akun dan autentikasi'
+}
+
+Table job_posting_positions {
+  job_posting_id uuid
+  position_id    integer
+
+  indexes {
+    (job_posting_id, position_id) [pk]
+  }
+
+  Note: 'Tabel dari Domain 2. Lowongan'
+}
+
+Ref: applications.applicant_id > users.id
+Ref: applications.(job_posting_id, position_id) > job_posting_positions.(job_posting_id, position_id)
+Ref: applicant_profiles.application_id - applications.id
+Ref: application_educations.application_id > applications.id
+Ref: application_work_histories.application_id > applications.id
+
+TableGroup lamaran_d3a {
+  applications
+  applicant_profiles
+  application_educations
+  application_work_histories
+}

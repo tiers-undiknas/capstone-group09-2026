@@ -1,0 +1,122 @@
+// Sistem Rekrutmen Karyawan Security Berbasis AI - PT Indra Garda Agung
+// Kelompok 9 - Capstone TI Undiknas - Tugas 1B
+// ERD v2.1 per domain (DBML untuk dbdiagram.io). Sumber kebenaran: Kamus Data v2.1.
+// Notasi Ref: '>' banyak-ke-satu, '-' satu-ke-satu.
+
+// Domain 5. Assessment
+// Tabel di dalam kotak grup = tabel domain ini. Tabel di luar kotak = tabel dari domain lain (hanya kolom yang dirujuk).
+
+Table assessment_modules {
+  id       integer [pk]
+  "name"   varchar(100) [not null]
+  order_no integer [not null]
+
+  Note: '10 modul assessment (FR-12). Seeder.'
+}
+
+Table assessment_questions {
+  id            integer [pk]
+  module_id     integer [not null]
+  question_text text [not null]
+  order_no      integer [not null]
+  is_active     boolean [not null, default: true]
+
+  Note: '99 soal (isi asli TBC, sementara sintetis).'
+}
+
+Table assessment_options {
+  id           integer [pk]
+  question_id  integer [not null]
+  option_label varchar(5) [not null]
+  option_text  text [not null]
+  score_value  integer [not null]
+
+  indexes {
+    (id, question_id) [unique, note: 'target FK gabungan dari assessment_answers']
+  }
+
+  Note: 'Pilihan jawaban + poin (kunci).'
+}
+
+Table assessment_classification_rules {
+  id             integer [pk]
+  module_id      integer [not null]
+  classification varchar(10) [not null, note: 'TINGGI / SEDANG / RENDAH']
+  min_score      numeric(6,2) [not null]
+  max_score      numeric(6,2) [not null]
+
+  Note: 'Ambang klasifikasi per modul (FR-14). Nilai TBC.'
+}
+
+Table assessment_sessions {
+  id                      uuid [pk]
+  application_id          uuid [unique, not null]
+  access_token_hash       varchar(255) [not null]
+  access_token_expires_at timestamptz [not null]
+  "status"                varchar(15) [not null, default: 'NOT_STARTED', note: 'NOT_STARTED / IN_PROGRESS / SUBMITTED / EXPIRED']
+  started_at              timestamptz
+  deadline_at             timestamptz [note: 'started_at + 60 menit, ditegakkan server']
+  submitted_at            timestamptz
+  total_score             numeric(7,2)
+  is_passed               boolean
+
+  indexes {
+    deadline_at
+  }
+
+  Note: 'Sesi pengerjaan tes (FR-13, FR-15). Satu percobaan per lamaran (TBC).'
+}
+
+Table assessment_answers {
+  id          uuid [pk]
+  session_id  uuid [not null]
+  question_id integer [not null]
+  option_id   integer [not null]
+  answered_at timestamptz [not null]
+
+  indexes {
+    (session_id, question_id) [unique]
+  }
+
+  Note: 'Jawaban pelamar per soal.'
+}
+
+Table assessment_module_scores {
+  id             uuid [pk]
+  session_id     uuid [not null]
+  module_id      integer [not null]
+  raw_score      numeric(6,2) [not null]
+  classification varchar(10) [not null, note: 'TINGGI / SEDANG / RENDAH']
+
+  indexes {
+    (session_id, module_id) [unique]
+  }
+
+  Note: 'Skor dan klasifikasi per modul (FR-14, FR-19).'
+}
+
+Table applications {
+  id uuid [pk]
+
+  Note: 'Tabel dari Domain 3a. Lamaran: data pribadi, pendidikan, pekerjaan'
+}
+
+Ref: assessment_questions.module_id > assessment_modules.id
+Ref: assessment_options.question_id > assessment_questions.id
+Ref: assessment_classification_rules.module_id > assessment_modules.id
+Ref: assessment_sessions.application_id - applications.id
+Ref: assessment_answers.session_id > assessment_sessions.id
+Ref: assessment_answers.question_id > assessment_questions.id
+Ref: assessment_answers.(option_id, question_id) > assessment_options.(id, question_id)
+Ref: assessment_module_scores.session_id > assessment_sessions.id
+Ref: assessment_module_scores.module_id > assessment_modules.id
+
+TableGroup assessment_d5 {
+  assessment_modules
+  assessment_questions
+  assessment_options
+  assessment_classification_rules
+  assessment_sessions
+  assessment_answers
+  assessment_module_scores
+}

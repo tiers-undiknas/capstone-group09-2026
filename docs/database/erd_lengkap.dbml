@@ -1,0 +1,616 @@
+// Sistem Rekrutmen Karyawan Security Berbasis AI - PT Indra Garda Agung
+// Kelompok 9 - Capstone TI Undiknas - Tugas 1B
+// ERD v2.1 (DBML untuk dbdiagram.io). Sumber kebenaran: Kamus Data v2.1.
+// Notasi Ref: '>' banyak-ke-satu, '-' satu-ke-satu.
+
+Project rekrutmen_iga {
+  database_type: 'PostgreSQL'
+  Note: 'ERD v2.1 - 37 tabel. Kolom enum = varchar + CHECK. Semua waktu timestamptz (UTC). Semua FK ON DELETE RESTRICT.'
+}
+
+// ===== Domain 1. Akun dan autentikasi =====
+Table roles {
+  id     integer [pk]
+  "name" varchar(20) [unique, not null, note: 'APPLICANT / ADMIN / HRD']
+
+  Note: 'Peran RBAC (NFR-5). Seeder: APPLICANT, ADMIN, HRD.'
+}
+
+Table users {
+  id                uuid [pk]
+  role_id           integer [not null]
+  email             varchar(255) [unique, not null]
+  password_hash     varchar(255) [not null, note: 'hash + salt (NFR-4)']
+  full_name         varchar(150) [not null]
+  is_email_verified boolean [not null, default: false]
+  email_verified_at timestamptz
+  is_active         boolean [not null, default: true]
+  created_at        timestamptz [not null]
+  updated_at        timestamptz [not null]
+
+  Note: 'Akun semua pengguna (FR-1 s.d. FR-4).'
+}
+
+Table auth_tokens {
+  id         uuid [pk]
+  user_id    uuid [not null]
+  "type"     varchar(20) [not null, note: 'VERIFY_EMAIL / RESET_PASSWORD']
+  token_hash varchar(255) [not null]
+  expires_at timestamptz [not null]
+  used_at    timestamptz
+
+  Note: 'Token sekali pakai verifikasi email & reset password (FR-3, FR-4).'
+}
+
+Table user_consents {
+  id             uuid [pk]
+  user_id        uuid [not null]
+  consent_type   varchar(30) [not null, note: 'PRIVACY_POLICY / SPECIAL_DATA / AI_PROCESSING']
+  policy_version varchar(20) [not null]
+  agreed_at      timestamptz [not null]
+
+  Note: 'Bukti persetujuan pemrosesan data pribadi (UU PDP).'
+}
+
+// ===== Domain 2. Lowongan =====
+Table positions {
+  id     integer [pk]
+  "name" varchar(50) [unique, not null]
+
+  Note: 'Master posisi (FR-7). Seeder: Anggota, Danru, Chief.'
+}
+
+Table job_postings {
+  id                   uuid [pk]
+  created_by           uuid [not null]
+  title                varchar(200) [not null]
+  placement_location   varchar(200) [not null]
+  timezone             varchar(40) [not null, default: 'Asia/Makassar', note: 'zona waktu IANA lokasi penempatan']
+  description          text
+  "status"             varchar(10) [not null, default: 'DRAFT', note: 'DRAFT / OPEN / CLOSED']
+  min_criteria_met     integer [not null, note: 'contoh 5 dari 10 (TBC)']
+  assessment_min_score numeric(6,2) [not null, note: 'ambang FR-15 (TBC)']
+  open_at              timestamptz
+  close_at             timestamptz [note: 'harus setelah open_at']
+  created_at           timestamptz [not null]
+  updated_at           timestamptz [not null]
+
+  Note: 'Lowongan yang dikelola Admin (FR-17).'
+}
+
+Table job_posting_positions {
+  job_posting_id uuid [not null]
+  position_id    integer [not null]
+  quota          integer [not null, note: 'CHECK > 0']
+
+  indexes {
+    (job_posting_id, position_id) [pk]
+  }
+
+  Note: 'Posisi yang dibuka pada lowongan beserta kuotanya.'
+}
+
+Table qualification_criteria {
+  id             uuid [pk]
+  job_posting_id uuid [not null]
+  code           varchar(30) [not null, note: 'AGE / HEIGHT / DOMICILE / CERT / DOCS / EXPERIENCE ...']
+  "name"         varchar(100) [not null]
+  source_field   varchar(100) [not null, note: 'nama kolom atau kode kriteria terhitung']
+  operator       varchar(10) [not null, note: 'GTE / LTE / EQ / IN / BETWEEN']
+  "value"        jsonb [not null, note: 'contoh {"min":18,"max":35}']
+  is_mandatory   boolean [not null, default: false]
+  weight         numeric(5,2) [not null, note: 'bobot skor kecocokan (TBC)']
+  order_no       integer [not null]
+
+  Note: 'Kriteria kualifikasi validasi administrasi (FR-9, FR-17).'
+}
+
+Table score_weights {
+  id             uuid [pk]
+  job_posting_id uuid [not null]
+  component      varchar(15) [not null, note: 'ADMIN / ASSESSMENT / INTERVIEW']
+  weight_percent numeric(5,2) [not null, note: 'CHECK 0-100']
+
+  indexes {
+    (job_posting_id, component) [unique]
+  }
+
+  Note: 'Bobot komponen skor akhir (FR-31). Total per lowongan = 100.'
+}
+
+// ===== Domain 3a. Lamaran: data pribadi, pendidikan, pekerjaan =====
+Table applications {
+  id              uuid [pk]
+  applicant_id    uuid [not null]
+  job_posting_id  uuid [not null]
+  position_id     integer [not null]
+  "status"        varchar(30) [not null, default: 'DRAFT', note: 'DRAFT / SUBMITTED / SCREENING_PASSED / SCREENING_FAILED / ASSESSMENT_IN_PROGRESS / ASSESSMENT_PASSED / ASSESSMENT_FAILED / INTERVIEW_PENDING / INTERVIEW_DONE / FINALIZED']
+  expected_salary numeric(14,2)
+  submitted_at    timestamptz [note: 'null selama DRAFT']
+  created_at      timestamptz [not null]
+  updated_at      timestamptz [not null]
+
+  indexes {
+    (applicant_id, job_posting_id) [unique]
+    (job_posting_id, status) [name: 'idx_applications_dashboard']
+  }
+
+  Note: 'Satu lamaran = satu pelamar pada satu lowongan dan posisi (FR-5, FR-7, FR-8, FR-18).'
+}
+
+Table applicant_profiles {
+  id                   uuid [pk]
+  application_id       uuid [unique, not null]
+  nik                  varchar(16) [not null, note: 'sensitif']
+  birth_place          varchar(100) [not null]
+  birth_date           date [not null]
+  gender               varchar(15) [not null]
+  religion             varchar(30)
+  marital_status       varchar(20)
+  phone                varchar(20) [not null]
+  address              text [not null]
+  domicile_city        varchar(100) [not null]
+  height_cm            numeric(5,1) [not null]
+  weight_kg            numeric(5,1)
+  blood_type           varchar(3)
+  martial_arts_skill   varchar(100)
+  security_certificate varchar(100)
+
+  Note: 'Data pribadi per lamaran (snapshot), relasi 1:1.'
+}
+
+Table application_educations {
+  id             uuid [pk]
+  application_id uuid [not null]
+  "level"        varchar(20) [not null]
+  institution    varchar(150) [not null]
+  major          varchar(100)
+  year_start     integer
+  year_end       integer
+
+  Note: 'Riwayat pendidikan.'
+}
+
+Table application_work_histories {
+  id             uuid [pk]
+  application_id uuid [not null]
+  company        varchar(150) [not null]
+  "position"     varchar(100) [not null]
+  start_date     date
+  end_date       date
+  reason_leaving varchar(255)
+
+  Note: 'Riwayat pekerjaan.'
+}
+
+// ===== Domain 3b. Lamaran: keluarga, kontak darurat, penjamin =====
+Table application_family_members {
+  id             uuid [pk]
+  application_id uuid [not null]
+  relationship   varchar(30) [not null]
+  "name"         varchar(150) [not null]
+  age            integer
+  occupation     varchar(100)
+
+  Note: 'Data keluarga.'
+}
+
+Table application_emergency_contacts {
+  id             uuid [pk]
+  application_id uuid [not null]
+  "name"         varchar(150) [not null]
+  relationship   varchar(30) [not null]
+  phone          varchar(20) [not null]
+
+  Note: 'Kontak darurat.'
+}
+
+Table application_references {
+  id             uuid [pk]
+  application_id uuid [not null]
+  "name"         varchar(150) [not null]
+  relationship   varchar(30) [not null]
+  phone          varchar(20) [not null]
+  address        text
+
+  Note: 'Referensi / penjamin.'
+}
+
+// ===== Domain 3c. Lamaran: dokumen, ekstraksi CV, riwayat status =====
+Table application_documents {
+  id             uuid [pk]
+  application_id uuid [not null]
+  doc_type       varchar(15) [not null, note: 'CV / KTP / SKCK / IJAZAH / SURAT_SEHAT']
+  storage_key    varchar(500) [not null]
+  file_name      varchar(255) [not null]
+  mime_type      varchar(100) [not null]
+  size_bytes     integer [not null]
+  uploaded_at    timestamptz [not null]
+
+  indexes {
+    (application_id, doc_type) [unique]
+  }
+
+  Note: 'Berkas unggahan (FR-6, NFR-6). File di cloud storage privat.'
+}
+
+Table cv_extractions {
+  id             uuid [pk]
+  document_id    uuid [unique, not null]
+  "status"       varchar(10) [not null, default: 'PENDING', note: 'PENDING / SUCCESS / FAILED']
+  extracted_data jsonb
+  ai_model       varchar(100)
+  error_message  text
+  created_at     timestamptz [not null]
+
+  Note: 'Hasil ekstraksi CV oleh modul AI (FR-6).'
+}
+
+Table application_status_histories {
+  id             uuid [pk]
+  application_id uuid [not null]
+  from_status    varchar(30)
+  to_status      varchar(30) [not null]
+  changed_by     uuid [note: 'null bila diubah sistem']
+  "note"         text
+  changed_at     timestamptz [not null]
+
+  Note: 'Riwayat perubahan status (FR-16, FR-18).'
+}
+
+// ===== Domain 4. Validasi administrasi =====
+Table admin_validations {
+  id                  uuid [pk]
+  application_id      uuid [unique, not null]
+  match_score_percent numeric(5,2) [not null, note: 'skor AI 0-100 (snapshot)']
+  criteria_met_count  integer [not null]
+  is_passed           boolean [not null]
+  evaluated_at        timestamptz [not null]
+
+  Note: 'Hasil validasi 1 otomatis (FR-9, FR-10).'
+}
+
+Table validation_criteria_results {
+  id              uuid [pk]
+  validation_id   uuid [not null]
+  criterion_id    uuid [not null]
+  applicant_value varchar(255)
+  is_met          boolean [not null]
+
+  indexes {
+    (validation_id, criterion_id) [unique]
+  }
+
+  Note: 'Rincian hasil per kriteria.'
+}
+
+// ===== Domain 5. Assessment =====
+Table assessment_modules {
+  id       integer [pk]
+  "name"   varchar(100) [not null]
+  order_no integer [not null]
+
+  Note: '10 modul assessment (FR-12). Seeder.'
+}
+
+Table assessment_questions {
+  id            integer [pk]
+  module_id     integer [not null]
+  question_text text [not null]
+  order_no      integer [not null]
+  is_active     boolean [not null, default: true]
+
+  Note: '99 soal (isi asli TBC, sementara sintetis).'
+}
+
+Table assessment_options {
+  id           integer [pk]
+  question_id  integer [not null]
+  option_label varchar(5) [not null]
+  option_text  text [not null]
+  score_value  integer [not null]
+
+  indexes {
+    (id, question_id) [unique, note: 'target FK gabungan dari assessment_answers']
+  }
+
+  Note: 'Pilihan jawaban + poin (kunci).'
+}
+
+Table assessment_classification_rules {
+  id             integer [pk]
+  module_id      integer [not null]
+  classification varchar(10) [not null, note: 'TINGGI / SEDANG / RENDAH']
+  min_score      numeric(6,2) [not null]
+  max_score      numeric(6,2) [not null]
+
+  Note: 'Ambang klasifikasi per modul (FR-14). Nilai TBC.'
+}
+
+Table assessment_sessions {
+  id                      uuid [pk]
+  application_id          uuid [unique, not null]
+  access_token_hash       varchar(255) [not null]
+  access_token_expires_at timestamptz [not null]
+  "status"                varchar(15) [not null, default: 'NOT_STARTED', note: 'NOT_STARTED / IN_PROGRESS / SUBMITTED / EXPIRED']
+  started_at              timestamptz
+  deadline_at             timestamptz [note: 'started_at + 60 menit, ditegakkan server']
+  submitted_at            timestamptz
+  total_score             numeric(7,2)
+  is_passed               boolean
+
+  indexes {
+    deadline_at
+  }
+
+  Note: 'Sesi pengerjaan tes (FR-13, FR-15). Satu percobaan per lamaran (TBC).'
+}
+
+Table assessment_answers {
+  id          uuid [pk]
+  session_id  uuid [not null]
+  question_id integer [not null]
+  option_id   integer [not null]
+  answered_at timestamptz [not null]
+
+  indexes {
+    (session_id, question_id) [unique]
+  }
+
+  Note: 'Jawaban pelamar per soal.'
+}
+
+Table assessment_module_scores {
+  id             uuid [pk]
+  session_id     uuid [not null]
+  module_id      integer [not null]
+  raw_score      numeric(6,2) [not null]
+  classification varchar(10) [not null, note: 'TINGGI / SEDANG / RENDAH']
+
+  indexes {
+    (session_id, module_id) [unique]
+  }
+
+  Note: 'Skor dan klasifikasi per modul (FR-14, FR-19).'
+}
+
+// ===== Domain 6. Interview =====
+Table interviewer_availabilities {
+  id             uuid [pk]
+  interviewer_id uuid [not null]
+  stage          varchar(10) [not null, note: 'OPS / HRD_1 / HRD_2']
+  start_at       timestamptz [not null]
+  end_at         timestamptz [not null, note: 'CHECK > start_at']
+
+  indexes {
+    (id, interviewer_id) [unique]
+    (stage, start_at)
+  }
+
+  Note: 'Ketersediaan interviewer per tahap (FR-21).'
+}
+
+Table interview_schedules {
+  id             uuid [pk]
+  application_id uuid [not null]
+  stage          varchar(10) [not null, note: 'OPS / HRD_1 / HRD_2']
+  scheduled_at   timestamptz [not null]
+  "status"       varchar(10) [not null, default: 'SCHEDULED', note: 'SCHEDULED / DONE / CANCELLED']
+  created_by     uuid [not null]
+
+  indexes {
+    (application_id, stage) [name: 'uq_schedule_active_stage', note: 'UNIQUE parsial WHERE status <> CANCELLED (dibuat di migrasi)']
+  }
+
+  Note: 'Jadwal interview per tahap (FR-20, FR-22, FR-23, FR-27).'
+}
+
+Table interview_schedule_interviewers {
+  id              uuid [pk]
+  schedule_id     uuid [not null]
+  interviewer_id  uuid [not null]
+  availability_id uuid [unique, note: 'nullable, satu slot dipakai sekali']
+
+  indexes {
+    (schedule_id, interviewer_id) [unique]
+  }
+
+  Note: 'Penugasan interviewer pada jadwal.'
+}
+
+Table interview_aspects {
+  id        integer [pk]
+  stage     varchar(10) [not null, note: 'OPS / HRD_1 / HRD_2']
+  category  varchar(50)
+  "name"    varchar(150) [not null]
+  max_score numeric(5,2) [not null, note: 'skala A-D dipetakan ke 4-1']
+  weight    numeric(5,2) [not null, default: 1, note: 'TBC']
+  order_no  integer [not null]
+  is_active boolean [not null, default: true]
+
+  Note: 'Aspek penilaian tiap form (FR-24). Seeder dari form IGA.'
+}
+
+Table interview_evaluations {
+  id                uuid [pk]
+  schedule_id       uuid [unique, not null]
+  submitted_by      uuid [not null]
+  total_score       numeric(7,2) [not null]
+  normalized_score  numeric(5,2) [not null, note: '0-100']
+  conclusion        text
+  conclusion_result varchar(20) [note: 'DIPERTIMBANGKAN / DITERIMA / TIDAK_DITERIMA (TBC)']
+  submitted_at      timestamptz [not null]
+
+  Note: 'Hasil penilaian satu form (FR-24, FR-25, FR-26).'
+}
+
+Table interview_evaluation_items {
+  id            uuid [pk]
+  evaluation_id uuid [not null]
+  aspect_id     integer [not null]
+  score         numeric(5,2) [not null]
+  "note"        text
+
+  indexes {
+    (evaluation_id, aspect_id) [unique]
+  }
+
+  Note: 'Skor per aspek.'
+}
+
+// ===== Domain 7. Skor, keputusan, dan notifikasi =====
+Table final_scores {
+  id                uuid [pk]
+  application_id    uuid [unique, not null]
+  admin_score       numeric(5,2) [not null]
+  assessment_score  numeric(5,2) [not null, note: 'normalisasi 0-100 (TBC)']
+  interview_score   numeric(5,2) [not null, note: 'gabungan tiga form (TBC)']
+  admin_weight      numeric(5,2) [not null, note: 'snapshot bobot']
+  assessment_weight numeric(5,2) [not null]
+  interview_weight  numeric(5,2) [not null]
+  final_score       numeric(5,2) [not null, note: 'hasil kalkulasi']
+  rank_no           integer [note: 'RANK() per lowongan']
+  calculated_at     timestamptz [not null]
+
+  Note: 'Skor akhir hasil kalkulasi (FR-28, FR-29, FR-32). Tidak dapat diedit.'
+}
+
+Table final_decisions {
+  id             uuid [pk]
+  application_id uuid [unique, not null]
+  decided_by     uuid [not null]
+  decision       varchar(20) [not null, note: 'DITERIMA / DIPERTIMBANGKAN / TIDAK_DITERIMA']
+  "note"         text
+  decided_at     timestamptz [not null]
+
+  Note: 'Keputusan akhir manual Admin/HRD (FR-30, FR-33).'
+}
+
+Table email_notifications {
+  id             uuid [pk]
+  user_id        uuid [not null]
+  application_id uuid [note: 'null untuk email akun']
+  "type"         varchar(25) [not null, note: 'VERIFY_EMAIL / RESET_PASSWORD / REGISTRATION_CONFIRM / ADMIN_RESULT / ASSESSMENT_LINK / ASSESSMENT_RESULT / INTERVIEW_SCHEDULE / FINAL_DECISION']
+  subject        varchar(255) [not null]
+  template_code  varchar(50) [not null]
+  payload        jsonb [not null, note: 'tanpa token mentah']
+  "status"       varchar(10) [not null, default: 'PENDING', note: 'PENDING / SENT / FAILED']
+  retry_count    integer [not null, default: 0]
+  last_error     text
+  next_retry_at  timestamptz
+  sent_at        timestamptz
+  created_at     timestamptz [not null]
+
+  indexes {
+    (status, next_retry_at) [name: 'idx_email_retry']
+  }
+
+  Note: 'Antrean dan riwayat email (FR-3, FR-4, FR-10, FR-11, FR-15, FR-22, FR-33, NFR-9).'
+}
+
+// ===== Relasi =====
+Ref: users.role_id > roles.id
+Ref: auth_tokens.user_id > users.id
+Ref: user_consents.user_id > users.id
+Ref: job_postings.created_by > users.id
+Ref: job_posting_positions.job_posting_id > job_postings.id
+Ref: job_posting_positions.position_id > positions.id
+Ref: qualification_criteria.job_posting_id > job_postings.id
+Ref: score_weights.job_posting_id > job_postings.id
+Ref: applications.applicant_id > users.id
+Ref: applications.(job_posting_id, position_id) > job_posting_positions.(job_posting_id, position_id)
+Ref: applicant_profiles.application_id - applications.id
+Ref: application_educations.application_id > applications.id
+Ref: application_work_histories.application_id > applications.id
+Ref: application_family_members.application_id > applications.id
+Ref: application_emergency_contacts.application_id > applications.id
+Ref: application_references.application_id > applications.id
+Ref: application_documents.application_id > applications.id
+Ref: cv_extractions.document_id - application_documents.id
+Ref: application_status_histories.application_id > applications.id
+Ref: application_status_histories.changed_by > users.id
+Ref: admin_validations.application_id - applications.id
+Ref: validation_criteria_results.validation_id > admin_validations.id
+Ref: validation_criteria_results.criterion_id > qualification_criteria.id
+Ref: assessment_questions.module_id > assessment_modules.id
+Ref: assessment_options.question_id > assessment_questions.id
+Ref: assessment_classification_rules.module_id > assessment_modules.id
+Ref: assessment_sessions.application_id - applications.id
+Ref: assessment_answers.session_id > assessment_sessions.id
+Ref: assessment_answers.question_id > assessment_questions.id
+Ref: assessment_answers.(option_id, question_id) > assessment_options.(id, question_id)
+Ref: assessment_module_scores.session_id > assessment_sessions.id
+Ref: assessment_module_scores.module_id > assessment_modules.id
+Ref: interviewer_availabilities.interviewer_id > users.id
+Ref: interview_schedules.application_id > applications.id
+Ref: interview_schedules.created_by > users.id
+Ref: interview_schedule_interviewers.schedule_id > interview_schedules.id
+Ref: interview_schedule_interviewers.interviewer_id > users.id
+Ref: interview_schedule_interviewers.(availability_id, interviewer_id) > interviewer_availabilities.(id, interviewer_id)
+Ref: interview_evaluations.schedule_id - interview_schedules.id
+Ref: interview_evaluations.submitted_by > users.id
+Ref: interview_evaluation_items.evaluation_id > interview_evaluations.id
+Ref: interview_evaluation_items.aspect_id > interview_aspects.id
+Ref: final_scores.application_id - applications.id
+Ref: final_decisions.application_id - applications.id
+Ref: final_decisions.decided_by > users.id
+Ref: email_notifications.user_id > users.id
+Ref: email_notifications.application_id > applications.id
+
+TableGroup akun_autentikasi {
+  roles
+  users
+  auth_tokens
+  user_consents
+}
+
+TableGroup lowongan {
+  positions
+  job_postings
+  job_posting_positions
+  qualification_criteria
+  score_weights
+}
+
+TableGroup lamaran {
+  applications
+  applicant_profiles
+  application_educations
+  application_work_histories
+  application_family_members
+  application_emergency_contacts
+  application_references
+  application_documents
+  cv_extractions
+  application_status_histories
+}
+
+TableGroup validasi_administrasi {
+  admin_validations
+  validation_criteria_results
+}
+
+TableGroup assessment {
+  assessment_modules
+  assessment_questions
+  assessment_options
+  assessment_classification_rules
+  assessment_sessions
+  assessment_answers
+  assessment_module_scores
+}
+
+TableGroup interview {
+  interviewer_availabilities
+  interview_schedules
+  interview_schedule_interviewers
+  interview_aspects
+  interview_evaluations
+  interview_evaluation_items
+}
+
+TableGroup skor_keputusan_notifikasi {
+  final_scores
+  final_decisions
+  email_notifications
+}

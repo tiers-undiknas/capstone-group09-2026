@@ -1,0 +1,122 @@
+// Sistem Rekrutmen Karyawan Security Berbasis AI - PT Indra Garda Agung
+// Kelompok 9 - Capstone TI Undiknas - Tugas 1B
+// ERD v2.1 per domain (DBML untuk dbdiagram.io). Sumber kebenaran: Kamus Data v2.1.
+// Notasi Ref: '>' banyak-ke-satu, '-' satu-ke-satu.
+
+// Domain 6. Interview
+// Tabel di dalam kotak grup = tabel domain ini. Tabel di luar kotak = tabel dari domain lain (hanya kolom yang dirujuk).
+
+Table interviewer_availabilities {
+  id             uuid [pk]
+  interviewer_id uuid [not null]
+  stage          varchar(10) [not null, note: 'OPS / HRD_1 / HRD_2']
+  start_at       timestamptz [not null]
+  end_at         timestamptz [not null, note: 'CHECK > start_at']
+
+  indexes {
+    (id, interviewer_id) [unique]
+    (stage, start_at)
+  }
+
+  Note: 'Ketersediaan interviewer per tahap (FR-21).'
+}
+
+Table interview_schedules {
+  id             uuid [pk]
+  application_id uuid [not null]
+  stage          varchar(10) [not null, note: 'OPS / HRD_1 / HRD_2']
+  scheduled_at   timestamptz [not null]
+  "status"       varchar(10) [not null, default: 'SCHEDULED', note: 'SCHEDULED / DONE / CANCELLED']
+  created_by     uuid [not null]
+
+  indexes {
+    (application_id, stage) [name: 'uq_schedule_active_stage', note: 'UNIQUE parsial WHERE status <> CANCELLED (dibuat di migrasi)']
+  }
+
+  Note: 'Jadwal interview per tahap (FR-20, FR-22, FR-23, FR-27).'
+}
+
+Table interview_schedule_interviewers {
+  id              uuid [pk]
+  schedule_id     uuid [not null]
+  interviewer_id  uuid [not null]
+  availability_id uuid [unique, note: 'nullable, satu slot dipakai sekali']
+
+  indexes {
+    (schedule_id, interviewer_id) [unique]
+  }
+
+  Note: 'Penugasan interviewer pada jadwal.'
+}
+
+Table interview_aspects {
+  id        integer [pk]
+  stage     varchar(10) [not null, note: 'OPS / HRD_1 / HRD_2']
+  category  varchar(50)
+  "name"    varchar(150) [not null]
+  max_score numeric(5,2) [not null, note: 'skala A-D dipetakan ke 4-1']
+  weight    numeric(5,2) [not null, default: 1, note: 'TBC']
+  order_no  integer [not null]
+  is_active boolean [not null, default: true]
+
+  Note: 'Aspek penilaian tiap form (FR-24). Seeder dari form IGA.'
+}
+
+Table interview_evaluations {
+  id                uuid [pk]
+  schedule_id       uuid [unique, not null]
+  submitted_by      uuid [not null]
+  total_score       numeric(7,2) [not null]
+  normalized_score  numeric(5,2) [not null, note: '0-100']
+  conclusion        text
+  conclusion_result varchar(20) [note: 'DIPERTIMBANGKAN / DITERIMA / TIDAK_DITERIMA (TBC)']
+  submitted_at      timestamptz [not null]
+
+  Note: 'Hasil penilaian satu form (FR-24, FR-25, FR-26).'
+}
+
+Table interview_evaluation_items {
+  id            uuid [pk]
+  evaluation_id uuid [not null]
+  aspect_id     integer [not null]
+  score         numeric(5,2) [not null]
+  "note"        text
+
+  indexes {
+    (evaluation_id, aspect_id) [unique]
+  }
+
+  Note: 'Skor per aspek.'
+}
+
+Table users {
+  id uuid [pk]
+
+  Note: 'Tabel dari Domain 1. Akun dan autentikasi'
+}
+
+Table applications {
+  id uuid [pk]
+
+  Note: 'Tabel dari Domain 3a. Lamaran: data pribadi, pendidikan, pekerjaan'
+}
+
+Ref: interviewer_availabilities.interviewer_id > users.id
+Ref: interview_schedules.application_id > applications.id
+Ref: interview_schedules.created_by > users.id
+Ref: interview_schedule_interviewers.schedule_id > interview_schedules.id
+Ref: interview_schedule_interviewers.interviewer_id > users.id
+Ref: interview_schedule_interviewers.(availability_id, interviewer_id) > interviewer_availabilities.(id, interviewer_id)
+Ref: interview_evaluations.schedule_id - interview_schedules.id
+Ref: interview_evaluations.submitted_by > users.id
+Ref: interview_evaluation_items.evaluation_id > interview_evaluations.id
+Ref: interview_evaluation_items.aspect_id > interview_aspects.id
+
+TableGroup interview_d6 {
+  interviewer_availabilities
+  interview_schedules
+  interview_schedule_interviewers
+  interview_aspects
+  interview_evaluations
+  interview_evaluation_items
+}

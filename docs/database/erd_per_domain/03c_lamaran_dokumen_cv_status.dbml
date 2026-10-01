@@ -1,0 +1,71 @@
+// Sistem Rekrutmen Karyawan Security Berbasis AI - PT Indra Garda Agung
+// Kelompok 9 - Capstone TI Undiknas - Tugas 1B
+// ERD v2.1 per domain (DBML untuk dbdiagram.io). Sumber kebenaran: Kamus Data v2.1.
+// Notasi Ref: '>' banyak-ke-satu, '-' satu-ke-satu.
+
+// Domain 3c. Lamaran: dokumen, ekstraksi CV, riwayat status
+// Tabel di dalam kotak grup = tabel domain ini. Tabel di luar kotak = tabel dari domain lain (hanya kolom yang dirujuk).
+
+Table application_documents {
+  id             uuid [pk]
+  application_id uuid [not null]
+  doc_type       varchar(15) [not null, note: 'CV / KTP / SKCK / IJAZAH / SURAT_SEHAT']
+  storage_key    varchar(500) [not null]
+  file_name      varchar(255) [not null]
+  mime_type      varchar(100) [not null]
+  size_bytes     integer [not null]
+  uploaded_at    timestamptz [not null]
+
+  indexes {
+    (application_id, doc_type) [unique]
+  }
+
+  Note: 'Berkas unggahan (FR-6, NFR-6). File di cloud storage privat.'
+}
+
+Table cv_extractions {
+  id             uuid [pk]
+  document_id    uuid [unique, not null]
+  "status"       varchar(10) [not null, default: 'PENDING', note: 'PENDING / SUCCESS / FAILED']
+  extracted_data jsonb
+  ai_model       varchar(100)
+  error_message  text
+  created_at     timestamptz [not null]
+
+  Note: 'Hasil ekstraksi CV oleh modul AI (FR-6).'
+}
+
+Table application_status_histories {
+  id             uuid [pk]
+  application_id uuid [not null]
+  from_status    varchar(30)
+  to_status      varchar(30) [not null]
+  changed_by     uuid [note: 'null bila diubah sistem']
+  "note"         text
+  changed_at     timestamptz [not null]
+
+  Note: 'Riwayat perubahan status (FR-16, FR-18).'
+}
+
+Table applications {
+  id uuid [pk]
+
+  Note: 'Tabel dari Domain 3a. Lamaran: data pribadi, pendidikan, pekerjaan'
+}
+
+Table users {
+  id uuid [pk]
+
+  Note: 'Tabel dari Domain 1. Akun dan autentikasi'
+}
+
+Ref: application_documents.application_id > applications.id
+Ref: cv_extractions.document_id - application_documents.id
+Ref: application_status_histories.application_id > applications.id
+Ref: application_status_histories.changed_by > users.id
+
+TableGroup lamaran_d3c {
+  application_documents
+  cv_extractions
+  application_status_histories
+}

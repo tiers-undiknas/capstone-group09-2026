@@ -1,0 +1,53 @@
+// Sistem Rekrutmen Karyawan Security Berbasis AI - PT Indra Garda Agung
+// Kelompok 9 - Capstone TI Undiknas - Tugas 1B
+// ERD v2.1 per domain (DBML untuk dbdiagram.io). Sumber kebenaran: Kamus Data v2.1.
+// Notasi Ref: '>' banyak-ke-satu, '-' satu-ke-satu.
+
+// Domain 4. Validasi administrasi
+// Tabel di dalam kotak grup = tabel domain ini. Tabel di luar kotak = tabel dari domain lain (hanya kolom yang dirujuk).
+
+Table admin_validations {
+  id                  uuid [pk]
+  application_id      uuid [unique, not null]
+  match_score_percent numeric(5,2) [not null, note: 'skor AI 0-100 (snapshot)']
+  criteria_met_count  integer [not null]
+  is_passed           boolean [not null]
+  evaluated_at        timestamptz [not null]
+
+  Note: 'Hasil validasi 1 otomatis (FR-9, FR-10).'
+}
+
+Table validation_criteria_results {
+  id              uuid [pk]
+  validation_id   uuid [not null]
+  criterion_id    uuid [not null]
+  applicant_value varchar(255)
+  is_met          boolean [not null]
+
+  indexes {
+    (validation_id, criterion_id) [unique]
+  }
+
+  Note: 'Rincian hasil per kriteria.'
+}
+
+Table applications {
+  id uuid [pk]
+
+  Note: 'Tabel dari Domain 3a. Lamaran: data pribadi, pendidikan, pekerjaan'
+}
+
+Table qualification_criteria {
+  id uuid [pk]
+
+  Note: 'Tabel dari Domain 2. Lowongan'
+}
+
+Ref: admin_validations.application_id - applications.id
+Ref: validation_criteria_results.validation_id > admin_validations.id
+Ref: validation_criteria_results.criterion_id > qualification_criteria.id
+
+TableGroup validasi_administrasi_d4 {
+  admin_validations
+  validation_criteria_results
+}

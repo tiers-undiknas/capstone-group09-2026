@@ -1,0 +1,80 @@
+// Sistem Rekrutmen Karyawan Security Berbasis AI - PT Indra Garda Agung
+// Kelompok 9 - Capstone TI Undiknas - Tugas 1B
+// ERD v2.1 per domain (DBML untuk dbdiagram.io). Sumber kebenaran: Kamus Data v2.1.
+// Notasi Ref: '>' banyak-ke-satu, '-' satu-ke-satu.
+
+// Domain 7. Skor, keputusan, dan notifikasi
+// Tabel di dalam kotak grup = tabel domain ini. Tabel di luar kotak = tabel dari domain lain (hanya kolom yang dirujuk).
+
+Table final_scores {
+  id                uuid [pk]
+  application_id    uuid [unique, not null]
+  admin_score       numeric(5,2) [not null]
+  assessment_score  numeric(5,2) [not null, note: 'normalisasi 0-100 (TBC)']
+  interview_score   numeric(5,2) [not null, note: 'gabungan tiga form (TBC)']
+  admin_weight      numeric(5,2) [not null, note: 'snapshot bobot']
+  assessment_weight numeric(5,2) [not null]
+  interview_weight  numeric(5,2) [not null]
+  final_score       numeric(5,2) [not null, note: 'hasil kalkulasi']
+  rank_no           integer [note: 'RANK() per lowongan']
+  calculated_at     timestamptz [not null]
+
+  Note: 'Skor akhir hasil kalkulasi (FR-28, FR-29, FR-32). Tidak dapat diedit.'
+}
+
+Table final_decisions {
+  id             uuid [pk]
+  application_id uuid [unique, not null]
+  decided_by     uuid [not null]
+  decision       varchar(20) [not null, note: 'DITERIMA / DIPERTIMBANGKAN / TIDAK_DITERIMA']
+  "note"         text
+  decided_at     timestamptz [not null]
+
+  Note: 'Keputusan akhir manual Admin/HRD (FR-30, FR-33).'
+}
+
+Table email_notifications {
+  id             uuid [pk]
+  user_id        uuid [not null]
+  application_id uuid [note: 'null untuk email akun']
+  "type"         varchar(25) [not null, note: 'VERIFY_EMAIL / RESET_PASSWORD / REGISTRATION_CONFIRM / ADMIN_RESULT / ASSESSMENT_LINK / ASSESSMENT_RESULT / INTERVIEW_SCHEDULE / FINAL_DECISION']
+  subject        varchar(255) [not null]
+  template_code  varchar(50) [not null]
+  payload        jsonb [not null, note: 'tanpa token mentah']
+  "status"       varchar(10) [not null, default: 'PENDING', note: 'PENDING / SENT / FAILED']
+  retry_count    integer [not null, default: 0]
+  last_error     text
+  next_retry_at  timestamptz
+  sent_at        timestamptz
+  created_at     timestamptz [not null]
+
+  indexes {
+    (status, next_retry_at) [name: 'idx_email_retry']
+  }
+
+  Note: 'Antrean dan riwayat email (FR-3, FR-4, FR-10, FR-11, FR-15, FR-22, FR-33, NFR-9).'
+}
+
+Table applications {
+  id uuid [pk]
+
+  Note: 'Tabel dari Domain 3a. Lamaran: data pribadi, pendidikan, pekerjaan'
+}
+
+Table users {
+  id uuid [pk]
+
+  Note: 'Tabel dari Domain 1. Akun dan autentikasi'
+}
+
+Ref: final_scores.application_id - applications.id
+Ref: final_decisions.application_id - applications.id
+Ref: final_decisions.decided_by > users.id
+Ref: email_notifications.user_id > users.id
+Ref: email_notifications.application_id > applications.id
+
+TableGroup skor_keputusan_notifikasi_d7 {
+  final_scores
+  final_decisions
+  email_notifications
+}

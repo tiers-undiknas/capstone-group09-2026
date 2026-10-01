@@ -1,0 +1,61 @@
+// Sistem Rekrutmen Karyawan Security Berbasis AI - PT Indra Garda Agung
+// Kelompok 9 - Capstone TI Undiknas - Tugas 1B
+// ERD v2.1 per domain (DBML untuk dbdiagram.io). Sumber kebenaran: Kamus Data v2.1.
+// Notasi Ref: '>' banyak-ke-satu, '-' satu-ke-satu.
+
+// Domain 1. Akun dan autentikasi
+// Tabel di dalam kotak grup = tabel domain ini. Tabel di luar kotak = tabel dari domain lain (hanya kolom yang dirujuk).
+
+Table roles {
+  id     integer [pk]
+  "name" varchar(20) [unique, not null, note: 'APPLICANT / ADMIN / HRD']
+
+  Note: 'Peran RBAC (NFR-5). Seeder: APPLICANT, ADMIN, HRD.'
+}
+
+Table users {
+  id                uuid [pk]
+  role_id           integer [not null]
+  email             varchar(255) [unique, not null]
+  password_hash     varchar(255) [not null, note: 'hash + salt (NFR-4)']
+  full_name         varchar(150) [not null]
+  is_email_verified boolean [not null, default: false]
+  email_verified_at timestamptz
+  is_active         boolean [not null, default: true]
+  created_at        timestamptz [not null]
+  updated_at        timestamptz [not null]
+
+  Note: 'Akun semua pengguna (FR-1 s.d. FR-4).'
+}
+
+Table auth_tokens {
+  id         uuid [pk]
+  user_id    uuid [not null]
+  "type"     varchar(20) [not null, note: 'VERIFY_EMAIL / RESET_PASSWORD']
+  token_hash varchar(255) [not null]
+  expires_at timestamptz [not null]
+  used_at    timestamptz
+
+  Note: 'Token sekali pakai verifikasi email & reset password (FR-3, FR-4).'
+}
+
+Table user_consents {
+  id             uuid [pk]
+  user_id        uuid [not null]
+  consent_type   varchar(30) [not null, note: 'PRIVACY_POLICY / SPECIAL_DATA / AI_PROCESSING']
+  policy_version varchar(20) [not null]
+  agreed_at      timestamptz [not null]
+
+  Note: 'Bukti persetujuan pemrosesan data pribadi (UU PDP).'
+}
+
+Ref: users.role_id > roles.id
+Ref: auth_tokens.user_id > users.id
+Ref: user_consents.user_id > users.id
+
+TableGroup akun_autentikasi_d1 {
+  roles
+  users
+  auth_tokens
+  user_consents
+}

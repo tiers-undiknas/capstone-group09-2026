@@ -1,0 +1,3758 @@
+openapi: 3.0.3
+info:
+  title: API Sistem Rekrutmen Security IGA
+  version: 0.1.1
+  description: 'Kontrak API Sistem Rekrutmen Karyawan Security Berbasis AI - PT Indra Garda Agung.
+
+
+    Kelompok 9 - Capstone TI Undiknas. Mengacu pada SRS dan Kamus Data ERD.
+
+
+    Konvensi:
+
+    - Semua waktu ISO 8601 (UTC di server); klien menampilkan sesuai `timezone` lowongan.
+
+    - Respons tunggal dibungkus `data`; daftar berhalaman memakai `data` + `meta`.
+
+    - 422 memakai format `errors` per field.
+
+    - Autentikasi: Bearer token (JWT) dari `/auth/login`; RBAC per peran APPLICANT, ADMIN, HRD (NFR-5).
+
+    - Token akses berlaku 120 menit (`expires_in` = 7200), lebih lama dari durasi tes assessment 60 menit. Logout mencabut token.
+
+    - Unggahan dokumen maksimal 5 MB per berkas, format PDF/JPG.'
+  contact:
+    name: 'Kelompok 9 - Capstone TI Undiknas'
+servers:
+- url: http://localhost:8000/api/v1
+  description: Lokal
+- url: https://staging.example.com/api/v1
+  description: Staging (ganti dengan domain tim)
+security:
+- bearerAuth: []
+tags:
+- name: Auth
+- name: Lowongan Publik
+- name: Lamaran (Pelamar)
+- name: Assessment (Pelamar)
+- name: Admin - Lowongan
+- name: Admin - Pelamar
+- name: Admin - Interview
+- name: HRD - Interview
+- name: Admin - Skor & Keputusan
+paths:
+  /auth/register:
+    post:
+      tags:
+      - Auth
+      summary: Registrasi akun pelamar
+      operationId: register
+      description: Membuat akun, menyimpan persetujuan UU PDP, dan mengirim email verifikasi (FR-1, FR-2, FR-3).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+                required:
+                - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /auth/email/verify:
+    post:
+      tags:
+      - Auth
+      summary: Verifikasi email
+      operationId: verifyEmail
+      description: Token sekali pakai dari email (FR-3).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRequest'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /auth/email/resend:
+    post:
+      tags:
+      - Auth
+      summary: Kirim ulang email verifikasi
+      operationId: resendVerification
+      description: Selalu membalas 202 agar tidak membocorkan email terdaftar.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailRequest'
+      responses:
+        '202':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooMany'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /auth/login:
+    post:
+      tags:
+      - Auth
+      summary: Login
+      operationId: login
+      description: Login dengan email dan kata sandi (FR-4). Akun pelamar yang belum verifikasi email ditolak 403. Token berlaku 120 menit.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthToken'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '429':
+          $ref: '#/components/responses/TooMany'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /auth/logout:
+    post:
+      tags:
+      - Auth
+      summary: Logout
+      operationId: logout
+      description: Mencabut token aktif.
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /auth/me:
+    get:
+      tags:
+      - Auth
+      summary: Profil akun yang sedang login
+      operationId: me
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+                required:
+                - data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /auth/password/forgot:
+    post:
+      tags:
+      - Auth
+      summary: Minta tautan reset kata sandi
+      operationId: forgotPassword
+      description: Selalu membalas 202 (FR-4).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailRequest'
+      responses:
+        '202':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooMany'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /auth/password/reset:
+    post:
+      tags:
+      - Auth
+      summary: Reset kata sandi
+      operationId: resetPassword
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /job-postings:
+    get:
+      tags:
+      - Lowongan Publik
+      summary: Daftar lowongan berstatus OPEN
+      operationId: listOpenJobPostings
+      description: Tujuan tautan dari iklan media sosial (FR-1).
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/JobPostingPublic'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - meta
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /job-postings/{jobPostingId}:
+    get:
+      tags:
+      - Lowongan Publik
+      summary: Detail lowongan
+      operationId: getOpenJobPosting
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/JobPostingId'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/JobPostingPublic'
+                required:
+                - data
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /positions:
+    get:
+      tags:
+      - Lowongan Publik
+      summary: Daftar posisi
+      operationId: listPositions
+      security: []
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Position'
+                required:
+                - data
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /me/applications:
+    get:
+      tags:
+      - Lamaran (Pelamar)
+      summary: Daftar lamaran milik pelamar
+      operationId: listMyApplications
+      description: '**Peran:** APPLICANT'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Application'
+                required:
+                - data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags:
+      - Lamaran (Pelamar)
+      summary: Mulai lamaran (DRAFT)
+      operationId: createApplication
+      description: 'Satu pelamar hanya satu lamaran per lowongan (FR-7).
+
+
+        **Peran:** APPLICANT'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApplicationRequest'
+      responses:
+        '201':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Application'
+                required:
+                - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /me/applications/{applicationId}:
+    get:
+      tags:
+      - Lamaran (Pelamar)
+      summary: Ambil seluruh isi formulir lamaran
+      operationId: getMyApplication
+      description: '**Peran:** APPLICANT'
+      parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ApplicationForm'
+                required:
+                - data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    patch:
+      tags:
+      - Lamaran (Pelamar)
+      summary: Ubah posisi atau gaji yang diharapkan
+      operationId: updateMyApplication
+      description: 'Hanya saat DRAFT.
+
+
+        **Peran:** APPLICANT'
+      parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateApplicationRequest'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Application'
+                required:
+                - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /me/applications/{applicationId}/profile:
+    put:
+      tags:
+      - Lamaran (Pelamar)
+      summary: Simpan data pribadi & fisik
+      operationId: putProfile
+      description: 'Hanya saat DRAFT (FR-5).
+
+
+        **Peran:** APPLICANT'
+      parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplicantProfile'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ApplicantProfile'
+                required:
+                - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /me/applications/{applicationId}/educations:
+    put:
+      tags:
+      - Lamaran (Pelamar)
+      summary: Simpan riwayat pendidikan
+      operationId: putEducations
+      description: 'Mengganti seluruh daftar dengan isi request. Hanya saat DRAFT (FR-5).
+
+
+        **Peran:** APPLICANT'
+      parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Education'
+              required:
+              - items
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Education'
+                required:
+                - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /me/applications/{applicationId}/work-histories:
+    put:
+      tags:
+      - Lamaran (Pelamar)
+      summary: Simpan riwayat pekerjaan
+      operationId: putWorkHistories
+      description: 'Mengganti seluruh daftar dengan isi request. Hanya saat DRAFT (FR-5).
+
+
+        **Peran:** APPLICANT'
+      parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/WorkHistory'
+              required:
+              - items
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WorkHistory'
+                required:
+                - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /me/applications/{applicationId}/family-members:
+    put:
+      tags:
+      - Lamaran (Pelamar)
+      summary: Simpan data keluarga
+      operationId: putFamilyMembers
+      description: 'Mengganti seluruh daftar dengan isi request. Hanya saat DRAFT (FR-5).
+
+
+        **Peran:** APPLICANT'
+      parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/FamilyMember'
+              required:
+              - items
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FamilyMember'
+                required:
+                - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /me/applications/{applicationId}/emergency-contacts:
+    put:
+      tags:
+      - Lamaran (Pelamar)
+      summary: Simpan kontak darurat
+      operationId: putEmergencyContacts
+      description: 'Mengganti seluruh daftar dengan isi request. Hanya saat DRAFT (FR-5).
+
+
+        **Peran:** APPLICANT'
+      parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/EmergencyContact'
+              required:
+              - items
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EmergencyContact'
+                required:
+                - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /me/applications/{applicationId}/references:
+    put:
+      tags:
+      - Lamaran (Pelamar)
+      summary: Simpan referensi/penjamin
+      operationId: putReferences
+      description: 'Mengganti seluruh daftar dengan isi request. Hanya saat DRAFT (FR-5).
+
+
+        **Peran:** APPLICANT'
+      parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Reference'
+              required:
+              - items
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Reference'
+                required:
+                - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /me/applications/{applicationId}/documents:
+    post:
+      tags:
+      - Lamaran (Pelamar)
+      summary: Unggah dokumen
+      operationId: uploadDocument
+      description: 'Satu berkas per doc_type; unggahan ulang menggantikan yang lama. Bila doc_type = CV, ekstraksi
+        AI berjalan asinkron (FR-6).
+
+
+        **Peran:** APPLICANT'
+      parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DocumentUpload'
+      responses:
+        '201':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ApplicationDocument'
+                required:
+                - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /me/applications/{applicationId}/documents/{documentId}:
+    delete:
+      tags:
+      - Lamaran (Pelamar)
+      summary: Hapus dokumen
+      operationId: deleteDocument
+      description: 'Hanya saat DRAFT.
+
+
+        **Peran:** APPLICANT'
+      parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '204':
+          description: Berhasil
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /me/applications/{applicationId}/documents/{documentId}/url:
+    get:
+      tags:
+      - Lamaran (Pelamar)
+      summary: Tautan unduh dokumen sendiri
+      operationId: getMyDocumentUrl
+      description: 'Signed URL berumur pendek (NFR-6).
+
+
+        **Peran:** APPLICANT'
+      parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SignedUrl'
+                required:
+                - data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /me/applications/{applicationId}/cv-extraction:
+    get:
+      tags:
+      - Lamaran (Pelamar)
+      summary: Status & hasil ekstraksi CV
+      operationId: getCvExtraction
+      description: 'Di-polling klien setelah unggah CV. Hasil hanya saran autofill (FR-6).
+
+
+        **Peran:** APPLICANT'
+      parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CvExtraction'
+                required:
+                - data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /me/applications/{applicationId}/submit:
+    post:
+      tags:
+      - Lamaran (Pelamar)
+      summary: Submit lamaran
+      operationId: submitApplication
+      description: 'Memeriksa field dan dokumen wajib (FR-8), mengubah status ke SUBMITTED, lalu memicu validasi
+        administrasi otomatis (FR-9) dan email hasil maksimal 1×24 jam (FR-10).
+
+
+        **Peran:** APPLICANT'
+      parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Application'
+                required:
+                - data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /me/applications/{applicationId}/assessment:
+    get:
+      tags:
+      - Assessment (Pelamar)
+      summary: Status sesi assessment
+      operationId: getAssessmentSession
+      description: '**Peran:** APPLICANT'
+      parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AssessmentSession'
+                required:
+                - data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /me/applications/{applicationId}/assessment/start:
+    post:
+      tags:
+      - Assessment (Pelamar)
+      summary: Mulai assessment
+      operationId: startAssessment
+      description: 'Memvalidasi token dari email, lalu menetapkan deadline_at = started_at + 60 menit (FR-13). Hanya
+        satu kali.
+
+
+        **Peran:** APPLICANT'
+      parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartAssessmentRequest'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AssessmentSession'
+                required:
+                - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /me/applications/{applicationId}/assessment/questions:
+    get:
+      tags:
+      - Assessment (Pelamar)
+      summary: Ambil 99 soal per modul
+      operationId: getAssessmentQuestions
+      description: 'Hanya saat IN_PROGRESS. Kunci jawaban tidak ikut dikirim (FR-12).
+
+
+        **Peran:** APPLICANT'
+      parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AssessmentQuestionSet'
+                required:
+                - data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /me/applications/{applicationId}/assessment/answers:
+    put:
+      tags:
+      - Assessment (Pelamar)
+      summary: Simpan jawaban (autosave)
+      operationId: saveAnswer
+      description: 'Upsert satu jawaban. Ditolak 409 setelah deadline_at.
+
+
+        **Peran:** APPLICANT'
+      parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnswerRequest'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /me/applications/{applicationId}/assessment/submit:
+    post:
+      tags:
+      - Assessment (Pelamar)
+      summary: Submit assessment
+      operationId: submitAssessment
+      description: 'Server menghitung skor per modul, klasifikasi, dan status lolos/tidak (FR-14, FR-15). Sesi yang
+        lewat deadline disubmit otomatis oleh sistem.
+
+
+        **Peran:** APPLICANT'
+      parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AssessmentSession'
+                required:
+                - data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /admin/job-postings:
+    get:
+      tags:
+      - Admin - Lowongan
+      summary: Daftar semua lowongan
+      operationId: adminListJobPostings
+      description: '**Peran:** ADMIN, HRD'
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+      - name: status
+        in: query
+        schema:
+          type: string
+          enum:
+          - DRAFT
+          - OPEN
+          - CLOSED
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/JobPosting'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - meta
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags:
+      - Admin - Lowongan
+      summary: Buat lowongan (DRAFT)
+      operationId: createJobPosting
+      description: 'FR-17.
+
+
+        **Peran:** ADMIN'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobPostingInput'
+      responses:
+        '201':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/JobPosting'
+                required:
+                - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /admin/job-postings/{jobPostingId}:
+    get:
+      tags:
+      - Admin - Lowongan
+      summary: Detail lowongan
+      operationId: getJobPosting
+      description: '**Peran:** ADMIN, HRD'
+      parameters:
+      - $ref: '#/components/parameters/JobPostingId'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/JobPosting'
+                required:
+                - data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    put:
+      tags:
+      - Admin - Lowongan
+      summary: Ubah lowongan
+      operationId: updateJobPosting
+      description: '**Peran:** ADMIN'
+      parameters:
+      - $ref: '#/components/parameters/JobPostingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobPostingInput'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/JobPosting'
+                required:
+                - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /admin/job-postings/{jobPostingId}/open:
+    post:
+      tags:
+      - Admin - Lowongan
+      summary: Buka lowongan
+      operationId: openJobPosting
+      description: 'Syarat: minimal satu posisi, kriteria terisi, dan bobot skor total 100.
+
+
+        **Peran:** ADMIN'
+      parameters:
+      - $ref: '#/components/parameters/JobPostingId'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/JobPosting'
+                required:
+                - data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /admin/job-postings/{jobPostingId}/close:
+    post:
+      tags:
+      - Admin - Lowongan
+      summary: Tutup lowongan
+      operationId: closeJobPosting
+      description: '**Peran:** ADMIN'
+      parameters:
+      - $ref: '#/components/parameters/JobPostingId'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/JobPosting'
+                required:
+                - data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /admin/job-postings/{jobPostingId}/positions:
+    put:
+      tags:
+      - Admin - Lowongan
+      summary: Atur posisi & kuota
+      operationId: putJobPostingPositions
+      description: 'Mengganti seluruh daftar posisi lowongan.
+
+
+        **Peran:** ADMIN'
+      parameters:
+      - $ref: '#/components/parameters/JobPostingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/JobPostingPosition'
+                  minItems: 1
+              required:
+              - items
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/JobPostingPosition'
+                required:
+                - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /admin/job-postings/{jobPostingId}/criteria:
+    get:
+      tags:
+      - Admin - Lowongan
+      summary: Daftar kriteria kualifikasi
+      operationId: listCriteria
+      description: '**Peran:** ADMIN, HRD'
+      parameters:
+      - $ref: '#/components/parameters/JobPostingId'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/QualificationCriterion'
+                required:
+                - data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    put:
+      tags:
+      - Admin - Lowongan
+      summary: Atur kriteria kualifikasi
+      operationId: putCriteria
+      description: 'Mengganti seluruh daftar (FR-9, FR-17). Ditolak 409 bila sudah ada lamaran tervalidasi.
+
+
+        **Peran:** ADMIN'
+      parameters:
+      - $ref: '#/components/parameters/JobPostingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/QualificationCriterion'
+              required:
+              - items
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/QualificationCriterion'
+                required:
+                - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /admin/job-postings/{jobPostingId}/score-weights:
+    get:
+      tags:
+      - Admin - Lowongan
+      summary: Bobot skor akhir
+      operationId: getScoreWeights
+      description: '**Peran:** ADMIN, HRD'
+      parameters:
+      - $ref: '#/components/parameters/JobPostingId'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ScoreWeights'
+                required:
+                - data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    put:
+      tags:
+      - Admin - Lowongan
+      summary: Atur bobot skor akhir
+      operationId: putScoreWeights
+      description: 'Total wajib 100, bila tidak dibalas 422 (FR-31).
+
+
+        **Peran:** ADMIN'
+      parameters:
+      - $ref: '#/components/parameters/JobPostingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScoreWeights'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ScoreWeights'
+                required:
+                - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /admin/job-postings/{jobPostingId}/summary:
+    get:
+      tags:
+      - Admin - Pelamar
+      summary: Ringkasan dashboard lowongan
+      operationId: getDashboardSummary
+      description: 'Jumlah pelamar per status (FR-16).
+
+
+        **Peran:** ADMIN, HRD'
+      parameters:
+      - $ref: '#/components/parameters/JobPostingId'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DashboardSummary'
+                required:
+                - data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /admin/job-postings/{jobPostingId}/applications:
+    get:
+      tags:
+      - Admin - Pelamar
+      summary: Daftar pelamar per lowongan
+      operationId: listApplications
+      description: 'Filter status dan pencarian nama/email. sort=rank untuk rekomendasi peringkat (FR-18, FR-29).
+
+
+        **Peran:** ADMIN, HRD'
+      parameters:
+      - $ref: '#/components/parameters/JobPostingId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+      - name: status
+        in: query
+        schema:
+          type: string
+          enum:
+          - DRAFT
+          - SUBMITTED
+          - SCREENING_PASSED
+          - SCREENING_FAILED
+          - ASSESSMENT_IN_PROGRESS
+          - ASSESSMENT_PASSED
+          - ASSESSMENT_FAILED
+          - INTERVIEW_PENDING
+          - INTERVIEW_DONE
+          - FINALIZED
+      - name: search
+        in: query
+        schema:
+          type: string
+      - name: sort
+        in: query
+        schema:
+          type: string
+          enum:
+          - submitted_at
+          - -submitted_at
+          - rank
+          - -final_score
+          - -assessment_score
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ApplicationListItem'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - meta
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /admin/applications/{applicationId}:
+    get:
+      tags:
+      - Admin - Pelamar
+      summary: Detail lengkap pelamar
+      operationId: getApplicationDetail
+      description: 'Data administrasi, hasil validasi, assessment, interview, skor akhir, keputusan, dan riwayat
+        status (FR-16, FR-19, FR-26).
+
+
+        **Peran:** ADMIN, HRD'
+      parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ApplicationDetail'
+                required:
+                - data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /admin/applications/{applicationId}/documents/{documentId}/url:
+    get:
+      tags:
+      - Admin - Pelamar
+      summary: Tautan unduh dokumen pelamar
+      operationId: getApplicantDocumentUrl
+      description: 'Signed URL berumur pendek; setiap akses dicatat (NFR-6).
+
+
+        **Peran:** ADMIN, HRD'
+      parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SignedUrl'
+                required:
+                - data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /admin/interviewers:
+    get:
+      tags:
+      - Admin - Interview
+      summary: Daftar interviewer (akun HRD)
+      operationId: listInterviewers
+      description: '**Peran:** ADMIN'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Interviewer'
+                required:
+                - data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /admin/interviewer-availabilities:
+    get:
+      tags:
+      - Admin - Interview
+      summary: Ketersediaan interviewer
+      operationId: listAvailabilities
+      description: 'Untuk menyusun jadwal; slot terpakai ditandai is_booked (FR-21).
+
+
+        **Peran:** ADMIN'
+      parameters:
+      - name: stage
+        in: query
+        schema:
+          type: string
+          enum:
+          - OPS
+          - HRD_1
+          - HRD_2
+      - name: from
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date-time
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Availability'
+                required:
+                - data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /admin/applications/{applicationId}/interview-schedules:
+    post:
+      tags:
+      - Admin - Interview
+      summary: Jadwalkan interview satu tahap
+      operationId: createInterviewSchedule
+      description: 'Hanya untuk lamaran lolos assessment. Tahap berikutnya bisa dijadwalkan setelah tahap sebelumnya
+        selesai (FR-20, FR-27). Mengirim email ke pelamar (FR-22).
+
+
+        **Peran:** ADMIN'
+      parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateScheduleRequest'
+      responses:
+        '201':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InterviewSchedule'
+                required:
+                - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /admin/interview-schedules:
+    get:
+      tags:
+      - Admin - Interview
+      summary: Semua jadwal interview
+      operationId: listInterviewSchedules
+      description: '**Peran:** ADMIN'
+      parameters:
+      - name: from
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: stage
+        in: query
+        schema:
+          type: string
+          enum:
+          - OPS
+          - HRD_1
+          - HRD_2
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InterviewSchedule'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+                required:
+                - data
+                - meta
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /admin/interview-schedules/{scheduleId}/cancel:
+    post:
+      tags:
+      - Admin - Interview
+      summary: Batalkan jadwal
+      operationId: cancelInterviewSchedule
+      description: 'Status menjadi CANCELLED; tahap yang sama dapat dijadwalkan ulang.
+
+
+        **Peran:** ADMIN'
+      parameters:
+      - $ref: '#/components/parameters/ScheduleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InterviewSchedule'
+                required:
+                - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /hrd/availabilities:
+    get:
+      tags:
+      - HRD - Interview
+      summary: Slot ketersediaan milik saya
+      operationId: listMyAvailabilities
+      description: '**Peran:** HRD'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Availability'
+                required:
+                - data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags:
+      - HRD - Interview
+      summary: Tambah slot ketersediaan
+      operationId: createAvailability
+      description: '**Peran:** HRD'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AvailabilityInput'
+      responses:
+        '201':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Availability'
+                required:
+                - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /hrd/availabilities/{availabilityId}:
+    delete:
+      tags:
+      - HRD - Interview
+      summary: Hapus slot
+      operationId: deleteAvailability
+      description: 'Ditolak 409 bila slot sudah dipakai jadwal.
+
+
+        **Peran:** HRD'
+      parameters:
+      - $ref: '#/components/parameters/AvailabilityId'
+      responses:
+        '204':
+          description: Berhasil
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /hrd/interview-tasks:
+    get:
+      tags:
+      - HRD - Interview
+      summary: Daftar tugas interview saya
+      operationId: listMyInterviewTasks
+      description: 'Nama pelamar, tanggal, waktu, dan tahap (FR-23).
+
+
+        **Peran:** HRD'
+      parameters:
+      - name: status
+        in: query
+        schema:
+          type: string
+          enum:
+          - SCHEDULED
+          - DONE
+          - CANCELLED
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InterviewSchedule'
+                required:
+                - data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /interview-aspects:
+    get:
+      tags:
+      - HRD - Interview
+      summary: Aspek penilaian per tahap
+      operationId: listInterviewAspects
+      description: 'Struktur Form Interview Ops, HRD Hal 1, dan HRD Hal 2 (FR-24).
+
+
+        **Peran:** ADMIN, HRD'
+      parameters:
+      - name: stage
+        in: query
+        required: true
+        schema:
+          type: string
+          enum:
+          - OPS
+          - HRD_1
+          - HRD_2
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InterviewAspect'
+                required:
+                - data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /hrd/interview-schedules/{scheduleId}/evaluation:
+    post:
+      tags:
+      - HRD - Interview
+      summary: Submit form penilaian interview
+      operationId: submitEvaluation
+      description: 'Hanya interviewer yang ditugaskan. Satu form per jadwal; jadwal menjadi DONE (FR-24, FR-25).
+
+
+        **Peran:** HRD'
+      parameters:
+      - $ref: '#/components/parameters/ScheduleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvaluationRequest'
+      responses:
+        '201':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InterviewEvaluation'
+                required:
+                - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /interview-schedules/{scheduleId}/evaluation:
+    get:
+      tags:
+      - HRD - Interview
+      summary: Lihat hasil penilaian
+      operationId: getEvaluation
+      description: 'FR-26.
+
+
+        **Peran:** ADMIN, HRD'
+      parameters:
+      - $ref: '#/components/parameters/ScheduleId'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/InterviewEvaluation'
+                required:
+                - data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /admin/job-postings/{jobPostingId}/final-scores/calculate:
+    post:
+      tags:
+      - Admin - Skor & Keputusan
+      summary: Hitung ulang skor akhir & peringkat
+      operationId: calculateFinalScores
+      description: 'Untuk pelamar berstatus INTERVIEW_DONE; memakai snapshot bobot saat ini (FR-28, FR-29, FR-32).
+
+
+        **Peran:** ADMIN'
+      parameters:
+      - $ref: '#/components/parameters/JobPostingId'
+      responses:
+        '200':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  calculated:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /admin/applications/{applicationId}/decision:
+    post:
+      tags:
+      - Admin - Skor & Keputusan
+      summary: Tetapkan keputusan akhir
+      operationId: decideApplication
+      description: 'Manual oleh Admin/HRD; status menjadi FINALIZED dan email dikirim (FR-30, FR-33).
+
+
+        **Peran:** ADMIN, HRD'
+      parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+      responses:
+        '201':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/FinalDecision'
+                required:
+                - data
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /admin/applications/{applicationId}/hr-sync:
+    post:
+      tags:
+      - Admin - Skor & Keputusan
+      summary: '[P2] Kirim kandidat diterima ke sistem HR IGA'
+      operationId: syncToHrSystem
+      description: 'Fitur P2 (FR-34). Meneruskan data ke sistem HR/absensi melalui middleware CMA Solutions Indonesia.
+        Format dan endpoint tujuan menunggu spesifikasi dari CMA.
+
+
+        **Peran:** ADMIN'
+      parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      responses:
+        '202':
+          description: Berhasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/HrSyncResult'
+                required:
+                - data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    ApplicationId:
+      name: applicationId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    JobPostingId:
+      name: jobPostingId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    DocumentId:
+      name: documentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ScheduleId:
+      name: scheduleId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    AvailabilityId:
+      name: availabilityId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PerPage:
+      name: per_page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  responses:
+    BadRequest:
+      description: Permintaan tidak dapat diproses
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Belum login atau token tidak valid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Peran tidak berhak mengakses sumber daya ini
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Data tidak ditemukan
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Status data tidak mengizinkan aksi ini
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unprocessable:
+      description: Validasi gagal
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+    TooMany:
+      description: Terlalu banyak percobaan
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ServerError:
+      description: Kesalahan server
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Terjadi kesalahan.
+      required:
+      - message
+    ValidationError:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Data yang dikirim tidak valid.
+        errors:
+          type: object
+          properties: {}
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          example:
+            email:
+            - Email sudah terdaftar.
+      required:
+      - message
+      - errors
+    PaginationMeta:
+      type: object
+      properties:
+        current_page:
+          type: integer
+        per_page:
+          type: integer
+        total:
+          type: integer
+        last_page:
+          type: integer
+    Message:
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+      - message
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          maxLength: 255
+          format: email
+        full_name:
+          type: string
+          maxLength: 150
+        role:
+          type: string
+          enum:
+          - APPLICANT
+          - ADMIN
+          - HRD
+        is_email_verified:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - email
+      - full_name
+      - role
+    RegisterRequest:
+      type: object
+      properties:
+        full_name:
+          type: string
+          maxLength: 150
+        email:
+          type: string
+          maxLength: 255
+          format: email
+        password:
+          type: string
+          maxLength: 72
+          minLength: 8
+          format: password
+        password_confirmation:
+          type: string
+          maxLength: 72
+          format: password
+        consents:
+          type: array
+          items:
+            type: object
+            properties:
+              consent_type:
+                type: string
+                enum:
+                - PRIVACY_POLICY
+                - SPECIAL_DATA
+                - AI_PROCESSING
+              policy_version:
+                type: string
+                maxLength: 20
+            required:
+            - consent_type
+            - policy_version
+          description: Wajib memuat ketiga jenis persetujuan (UU PDP).
+          minItems: 3
+      required:
+      - full_name
+      - email
+      - password
+      - password_confirmation
+      - consents
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          maxLength: 255
+          format: email
+        password:
+          type: string
+          format: password
+      required:
+      - email
+      - password
+    AuthToken:
+      type: object
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          enum:
+          - Bearer
+        expires_in:
+          type: integer
+          description: Masa berlaku token dalam detik (7200 = 120 menit)
+          example: 7200
+        user:
+          $ref: '#/components/schemas/User'
+      required:
+      - access_token
+      - token_type
+      - expires_in
+      - user
+    EmailRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          maxLength: 255
+          format: email
+      required:
+      - email
+    TokenRequest:
+      type: object
+      properties:
+        token:
+          type: string
+          description: Token dari tautan email
+      required:
+      - token
+    ResetPasswordRequest:
+      type: object
+      properties:
+        token:
+          type: string
+        password:
+          type: string
+          maxLength: 72
+          minLength: 8
+          format: password
+        password_confirmation:
+          type: string
+          maxLength: 72
+          format: password
+      required:
+      - token
+      - password
+      - password_confirmation
+    Position:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          maxLength: 50
+          example: Anggota
+      required:
+      - id
+      - name
+    JobPostingPosition:
+      type: object
+      properties:
+        position_id:
+          type: integer
+        name:
+          type: string
+          maxLength: 50
+          readOnly: true
+        quota:
+          type: integer
+          minimum: 1
+      required:
+      - position_id
+      - quota
+    JobPostingPublic:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          maxLength: 200
+        placement_location:
+          type: string
+          maxLength: 200
+        timezone:
+          type: string
+          maxLength: 40
+          example: Asia/Makassar
+        description:
+          type: string
+          nullable: true
+        open_at:
+          type: string
+          format: date-time
+          nullable: true
+        close_at:
+          type: string
+          format: date-time
+          nullable: true
+        positions:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobPostingPosition'
+    JobPostingInput:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 200
+        placement_location:
+          type: string
+          maxLength: 200
+        timezone:
+          type: string
+          maxLength: 40
+          example: Asia/Makassar
+        description:
+          type: string
+          nullable: true
+        min_criteria_met:
+          type: integer
+          minimum: 0
+          example: 5
+        assessment_min_score:
+          type: number
+          minimum: 0
+          example: 60
+        open_at:
+          type: string
+          format: date-time
+          nullable: true
+        close_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Harus setelah open_at
+      required:
+      - title
+      - placement_location
+      - min_criteria_met
+      - assessment_min_score
+    JobPosting:
+      allOf:
+      - $ref: '#/components/schemas/JobPostingInput'
+      - type: object
+        properties:
+          id:
+            type: string
+            format: uuid
+          status:
+            type: string
+            enum:
+            - DRAFT
+            - OPEN
+            - CLOSED
+          positions:
+            type: array
+            items:
+              $ref: '#/components/schemas/JobPostingPosition'
+          created_by:
+            type: string
+            format: uuid
+          created_at:
+            type: string
+            format: date-time
+          updated_at:
+            type: string
+            format: date-time
+    QualificationCriterion:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        code:
+          type: string
+          maxLength: 30
+          example: HEIGHT
+          description: AGE, HEIGHT, DOMICILE, CERT, DOCS, EXPERIENCE, dst.
+        name:
+          type: string
+          maxLength: 100
+          example: Tinggi badan minimal
+        source_field:
+          type: string
+          maxLength: 100
+          example: applicant_profiles.height_cm
+          description: Nama kolom atau kode kriteria terhitung
+        operator:
+          type: string
+          enum:
+          - GTE
+          - LTE
+          - EQ
+          - IN
+          - BETWEEN
+        value:
+          description: 'Nilai pembanding: angka, teks, daftar, atau {min,max}'
+          example:
+            min: 165
+        is_mandatory:
+          type: boolean
+        weight:
+          type: number
+          minimum: 0
+          example: 10
+        order_no:
+          type: integer
+      required:
+      - code
+      - name
+      - source_field
+      - operator
+      - value
+      - is_mandatory
+      - weight
+      - order_no
+    ScoreWeights:
+      type: object
+      properties:
+        ADMIN:
+          type: number
+          minimum: 0
+          maximum: 100
+          example: 20
+        ASSESSMENT:
+          type: number
+          minimum: 0
+          maximum: 100
+          example: 30
+        INTERVIEW:
+          type: number
+          minimum: 0
+          maximum: 100
+          example: 50
+      required:
+      - ADMIN
+      - ASSESSMENT
+      - INTERVIEW
+      description: Total harus 100 (FR-31)
+    Application:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        job_posting_id:
+          type: string
+          format: uuid
+        job_title:
+          type: string
+          readOnly: true
+        position_id:
+          type: integer
+        position_name:
+          type: string
+          readOnly: true
+        status:
+          type: string
+          enum:
+          - DRAFT
+          - SUBMITTED
+          - SCREENING_PASSED
+          - SCREENING_FAILED
+          - ASSESSMENT_IN_PROGRESS
+          - ASSESSMENT_PASSED
+          - ASSESSMENT_FAILED
+          - INTERVIEW_PENDING
+          - INTERVIEW_DONE
+          - FINALIZED
+        expected_salary:
+          type: number
+          minimum: 0
+          nullable: true
+        submitted_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateApplicationRequest:
+      type: object
+      properties:
+        job_posting_id:
+          type: string
+          format: uuid
+        position_id:
+          type: integer
+      required:
+      - job_posting_id
+      - position_id
+    UpdateApplicationRequest:
+      type: object
+      properties:
+        position_id:
+          type: integer
+        expected_salary:
+          type: number
+          minimum: 0
+          nullable: true
+    ApplicantProfile:
+      type: object
+      properties:
+        nik:
+          type: string
+          maxLength: 16
+          pattern: ^[0-9]{16}$
+        birth_place:
+          type: string
+          maxLength: 100
+        birth_date:
+          type: string
+          format: date
+        gender:
+          type: string
+          enum:
+          - LAKI_LAKI
+          - PEREMPUAN
+        religion:
+          type: string
+          maxLength: 30
+          nullable: true
+        marital_status:
+          type: string
+          maxLength: 20
+          nullable: true
+        phone:
+          type: string
+          maxLength: 20
+          example: 081234567890
+        address:
+          type: string
+        domicile_city:
+          type: string
+          maxLength: 100
+          example: Denpasar
+        height_cm:
+          type: number
+          minimum: 100
+          maximum: 250
+        weight_kg:
+          type: number
+          minimum: 30
+          maximum: 250
+          nullable: true
+        blood_type:
+          type: string
+          maxLength: 3
+          nullable: true
+        martial_arts_skill:
+          type: string
+          maxLength: 100
+          nullable: true
+        security_certificate:
+          type: string
+          maxLength: 100
+          example: Gada Pratama
+          nullable: true
+      required:
+      - nik
+      - birth_place
+      - birth_date
+      - gender
+      - phone
+      - address
+      - domicile_city
+      - height_cm
+    Education:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        level:
+          type: string
+          maxLength: 20
+          example: SMA/SMK
+        institution:
+          type: string
+          maxLength: 150
+        major:
+          type: string
+          maxLength: 100
+          nullable: true
+        year_start:
+          type: integer
+          nullable: true
+        year_end:
+          type: integer
+          nullable: true
+      required:
+      - level
+      - institution
+    WorkHistory:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        company:
+          type: string
+          maxLength: 150
+        position:
+          type: string
+          maxLength: 100
+        start_date:
+          type: string
+          format: date
+          nullable: true
+        end_date:
+          type: string
+          format: date
+          description: Kosong bila masih bekerja
+          nullable: true
+        reason_leaving:
+          type: string
+          maxLength: 255
+          nullable: true
+      required:
+      - company
+      - position
+    FamilyMember:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        relationship:
+          type: string
+          maxLength: 30
+        name:
+          type: string
+          maxLength: 150
+        age:
+          type: integer
+          nullable: true
+        occupation:
+          type: string
+          maxLength: 100
+          nullable: true
+      required:
+      - relationship
+      - name
+    EmergencyContact:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 150
+        relationship:
+          type: string
+          maxLength: 30
+        phone:
+          type: string
+          maxLength: 20
+      required:
+      - name
+      - relationship
+      - phone
+    Reference:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 150
+        relationship:
+          type: string
+          maxLength: 30
+        phone:
+          type: string
+          maxLength: 20
+        address:
+          type: string
+          nullable: true
+      required:
+      - name
+      - relationship
+      - phone
+    ApplicationDocument:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        doc_type:
+          type: string
+          enum:
+          - CV
+          - KTP
+          - SKCK
+          - IJAZAH
+          - SURAT_SEHAT
+        file_name:
+          type: string
+          maxLength: 255
+        mime_type:
+          type: string
+          maxLength: 100
+        size_bytes:
+          type: integer
+        uploaded_at:
+          type: string
+          format: date-time
+    DocumentUpload:
+      type: object
+      properties:
+        doc_type:
+          type: string
+          enum:
+          - CV
+          - KTP
+          - SKCK
+          - IJAZAH
+          - SURAT_SEHAT
+        file:
+          type: string
+          format: binary
+          description: PDF/JPG, ukuran maksimum 5 MB. Lebih dari itu dibalas 422.
+      required:
+      - doc_type
+      - file
+    SignedUrl:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
+      required:
+      - url
+      - expires_at
+    CvExtraction:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+          - PENDING
+          - SUCCESS
+          - FAILED
+        extracted_data:
+          type: object
+          properties:
+            profile:
+              $ref: '#/components/schemas/ApplicantProfile'
+            educations:
+              type: array
+              items:
+                $ref: '#/components/schemas/Education'
+            work_histories:
+              type: array
+              items:
+                $ref: '#/components/schemas/WorkHistory'
+          description: Hanya saran autofill; tidak otomatis disimpan. Field bisa kosong.
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - status
+    ApplicationForm:
+      type: object
+      properties:
+        application:
+          $ref: '#/components/schemas/Application'
+        profile:
+          allOf:
+          - $ref: '#/components/schemas/ApplicantProfile'
+          nullable: true
+        educations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Education'
+        work_histories:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkHistory'
+        family_members:
+          type: array
+          items:
+            $ref: '#/components/schemas/FamilyMember'
+        emergency_contacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/EmergencyContact'
+        references:
+          type: array
+          items:
+            $ref: '#/components/schemas/Reference'
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApplicationDocument'
+    StatusHistory:
+      type: object
+      properties:
+        from_status:
+          type: string
+          enum:
+          - DRAFT
+          - SUBMITTED
+          - SCREENING_PASSED
+          - SCREENING_FAILED
+          - ASSESSMENT_IN_PROGRESS
+          - ASSESSMENT_PASSED
+          - ASSESSMENT_FAILED
+          - INTERVIEW_PENDING
+          - INTERVIEW_DONE
+          - FINALIZED
+          nullable: true
+        to_status:
+          type: string
+          enum:
+          - DRAFT
+          - SUBMITTED
+          - SCREENING_PASSED
+          - SCREENING_FAILED
+          - ASSESSMENT_IN_PROGRESS
+          - ASSESSMENT_PASSED
+          - ASSESSMENT_FAILED
+          - INTERVIEW_PENDING
+          - INTERVIEW_DONE
+          - FINALIZED
+        changed_by_name:
+          type: string
+          nullable: true
+        note:
+          type: string
+          nullable: true
+        changed_at:
+          type: string
+          format: date-time
+    AdminValidation:
+      type: object
+      properties:
+        match_score_percent:
+          type: number
+          minimum: 0
+          maximum: 100
+        criteria_met_count:
+          type: integer
+        is_passed:
+          type: boolean
+        evaluated_at:
+          type: string
+          format: date-time
+        criteria:
+          type: array
+          items:
+            type: object
+            properties:
+              criterion_id:
+                type: string
+                format: uuid
+              code:
+                type: string
+              name:
+                type: string
+              is_mandatory:
+                type: boolean
+              applicant_value:
+                type: string
+                nullable: true
+              is_met:
+                type: boolean
+    AssessmentSession:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+          - NOT_STARTED
+          - IN_PROGRESS
+          - SUBMITTED
+          - EXPIRED
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        deadline_at:
+          type: string
+          format: date-time
+          nullable: true
+        submitted_at:
+          type: string
+          format: date-time
+          nullable: true
+        server_time:
+          type: string
+          format: date-time
+          description: Untuk sinkronisasi timer di klien
+        answered_count:
+          type: integer
+        total_questions:
+          type: integer
+          example: 99
+      required:
+      - status
+      - server_time
+    StartAssessmentRequest:
+      type: object
+      properties:
+        access_token:
+          type: string
+          description: Token dari tautan email assessment (FR-11)
+      required:
+      - access_token
+    AssessmentQuestionSet:
+      type: object
+      properties:
+        deadline_at:
+          type: string
+          format: date-time
+        modules:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+              order_no:
+                type: integer
+              questions:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    order_no:
+                      type: integer
+                    question_text:
+                      type: string
+                    options:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          id:
+                            type: integer
+                          option_label:
+                            type: string
+                            maxLength: 5
+                          option_text:
+                            type: string
+                        description: score_value tidak pernah dikirim ke pelamar
+                    selected_option_id:
+                      type: integer
+                      nullable: true
+    AnswerRequest:
+      type: object
+      properties:
+        question_id:
+          type: integer
+        option_id:
+          type: integer
+      required:
+      - question_id
+      - option_id
+    AssessmentResult:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+          - NOT_STARTED
+          - IN_PROGRESS
+          - SUBMITTED
+          - EXPIRED
+        total_score:
+          type: number
+          nullable: true
+        is_passed:
+          type: boolean
+          nullable: true
+        submitted_at:
+          type: string
+          format: date-time
+          nullable: true
+        module_scores:
+          type: array
+          items:
+            type: object
+            properties:
+              module_id:
+                type: integer
+              module_name:
+                type: string
+              raw_score:
+                type: number
+              classification:
+                type: string
+                enum:
+                - TINGGI
+                - SEDANG
+                - RENDAH
+    Interviewer:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+        email:
+          type: string
+          format: email
+    AvailabilityInput:
+      type: object
+      properties:
+        stage:
+          type: string
+          enum:
+          - OPS
+          - HRD_1
+          - HRD_2
+        start_at:
+          type: string
+          format: date-time
+        end_at:
+          type: string
+          format: date-time
+          description: Harus setelah start_at
+      required:
+      - stage
+      - start_at
+      - end_at
+    Availability:
+      allOf:
+      - $ref: '#/components/schemas/AvailabilityInput'
+      - type: object
+        properties:
+          id:
+            type: string
+            format: uuid
+          interviewer:
+            $ref: '#/components/schemas/Interviewer'
+          is_booked:
+            type: boolean
+    CreateScheduleRequest:
+      type: object
+      properties:
+        stage:
+          type: string
+          enum:
+          - OPS
+          - HRD_1
+          - HRD_2
+        scheduled_at:
+          type: string
+          format: date-time
+        interviewers:
+          type: array
+          items:
+            type: object
+            properties:
+              interviewer_id:
+                type: string
+                format: uuid
+              availability_id:
+                type: string
+                format: uuid
+                nullable: true
+            required:
+            - interviewer_id
+          minItems: 1
+          maxItems: 2
+      required:
+      - stage
+      - scheduled_at
+      - interviewers
+    InterviewSchedule:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        application_id:
+          type: string
+          format: uuid
+        applicant_name:
+          type: string
+        position_name:
+          type: string
+        stage:
+          type: string
+          enum:
+          - OPS
+          - HRD_1
+          - HRD_2
+        scheduled_at:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+          example: Asia/Makassar
+        status:
+          type: string
+          enum:
+          - SCHEDULED
+          - DONE
+          - CANCELLED
+        interviewers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Interviewer'
+        has_evaluation:
+          type: boolean
+    InterviewAspect:
+      type: object
+      properties:
+        id:
+          type: integer
+        stage:
+          type: string
+          enum:
+          - OPS
+          - HRD_1
+          - HRD_2
+        category:
+          type: string
+          nullable: true
+        name:
+          type: string
+        max_score:
+          type: number
+        weight:
+          type: number
+        order_no:
+          type: integer
+    EvaluationRequest:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              aspect_id:
+                type: integer
+              score:
+                type: number
+                minimum: 0
+                description: Tidak boleh melebihi max_score aspek
+              note:
+                type: string
+                nullable: true
+            required:
+            - aspect_id
+            - score
+          description: Wajib mencakup seluruh aspek aktif pada tahap ini
+        conclusion:
+          type: string
+          nullable: true
+        conclusion_result:
+          type: string
+          enum:
+          - DITERIMA
+          - DIPERTIMBANGKAN
+          - TIDAK_DITERIMA
+          nullable: true
+      required:
+      - items
+    InterviewEvaluation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        schedule_id:
+          type: string
+          format: uuid
+        stage:
+          type: string
+          enum:
+          - OPS
+          - HRD_1
+          - HRD_2
+        submitted_by:
+          $ref: '#/components/schemas/Interviewer'
+        total_score:
+          type: number
+        normalized_score:
+          type: number
+          minimum: 0
+          maximum: 100
+        conclusion:
+          type: string
+          nullable: true
+        conclusion_result:
+          type: string
+          enum:
+          - DITERIMA
+          - DIPERTIMBANGKAN
+          - TIDAK_DITERIMA
+          nullable: true
+        submitted_at:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              aspect_id:
+                type: integer
+              aspect_name:
+                type: string
+              category:
+                type: string
+                nullable: true
+              score:
+                type: number
+              max_score:
+                type: number
+              note:
+                type: string
+                nullable: true
+    FinalScore:
+      type: object
+      properties:
+        admin_score:
+          type: number
+        assessment_score:
+          type: number
+        interview_score:
+          type: number
+        weights:
+          $ref: '#/components/schemas/ScoreWeights'
+        final_score:
+          type: number
+          description: Hasil kalkulasi, tidak dapat diedit (FR-32)
+        rank_no:
+          type: integer
+          nullable: true
+        calculated_at:
+          type: string
+          format: date-time
+    DecisionRequest:
+      type: object
+      properties:
+        decision:
+          type: string
+          enum:
+          - DITERIMA
+          - DIPERTIMBANGKAN
+          - TIDAK_DITERIMA
+        note:
+          type: string
+          nullable: true
+      required:
+      - decision
+    FinalDecision:
+      type: object
+      properties:
+        decision:
+          type: string
+          enum:
+          - DITERIMA
+          - DIPERTIMBANGKAN
+          - TIDAK_DITERIMA
+        note:
+          type: string
+          nullable: true
+        decided_by:
+          $ref: '#/components/schemas/Interviewer'
+        decided_at:
+          type: string
+          format: date-time
+    ApplicationListItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        applicant_name:
+          type: string
+        email:
+          type: string
+          format: email
+        position_name:
+          type: string
+        status:
+          type: string
+          enum:
+          - DRAFT
+          - SUBMITTED
+          - SCREENING_PASSED
+          - SCREENING_FAILED
+          - ASSESSMENT_IN_PROGRESS
+          - ASSESSMENT_PASSED
+          - ASSESSMENT_FAILED
+          - INTERVIEW_PENDING
+          - INTERVIEW_DONE
+          - FINALIZED
+        match_score_percent:
+          type: number
+          nullable: true
+        assessment_score:
+          type: number
+          nullable: true
+        final_score:
+          type: number
+          nullable: true
+        rank_no:
+          type: integer
+          nullable: true
+        decision:
+          type: string
+          enum:
+          - DITERIMA
+          - DIPERTIMBANGKAN
+          - TIDAK_DITERIMA
+          nullable: true
+        submitted_at:
+          type: string
+          format: date-time
+          nullable: true
+    ApplicationDetail:
+      allOf:
+      - $ref: '#/components/schemas/ApplicationForm'
+      - type: object
+        properties:
+          applicant:
+            $ref: '#/components/schemas/User'
+          validation:
+            allOf:
+            - $ref: '#/components/schemas/AdminValidation'
+            nullable: true
+          assessment:
+            allOf:
+            - $ref: '#/components/schemas/AssessmentResult'
+            nullable: true
+          interview_schedules:
+            type: array
+            items:
+              $ref: '#/components/schemas/InterviewSchedule'
+          interview_evaluations:
+            type: array
+            items:
+              $ref: '#/components/schemas/InterviewEvaluation'
+          final_score:
+            allOf:
+            - $ref: '#/components/schemas/FinalScore'
+            nullable: true
+          final_decision:
+            allOf:
+            - $ref: '#/components/schemas/FinalDecision'
+            nullable: true
+          status_histories:
+            type: array
+            items:
+              $ref: '#/components/schemas/StatusHistory'
+    DashboardSummary:
+      type: object
+      properties:
+        job_posting_id:
+          type: string
+          format: uuid
+        total_applications:
+          type: integer
+        by_status:
+          type: object
+          properties: {}
+          additionalProperties:
+            type: integer
+          example:
+            SUBMITTED: 120
+            SCREENING_PASSED: 80
+            ASSESSMENT_PASSED: 35
+            INTERVIEW_PENDING: 20
+        upcoming_interviews:
+          type: integer
+    HrSyncResult:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+          - QUEUED
+          - SENT
+          - FAILED
+        message:
+          type: string
+          nullable: true
